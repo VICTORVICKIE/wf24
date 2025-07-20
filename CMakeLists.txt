@@ -39,12 +39,14 @@ target_include_directories(lvgl PUBLIC
     ${SDL2_PATH}/include
 )
 
+# Find all .c files in assets directory
+file(GLOB ASSET_FILES "${PROJECT_SOURCE_DIR}/assets/*.c")
+
 # Create the main executable
 add_executable(main
     ${PROJECT_SOURCE_DIR}/src/main.c
     ${PROJECT_SOURCE_DIR}/src/ui.c
-    ${PROJECT_SOURCE_DIR}/src/saturn_v.c
-    ${PROJECT_SOURCE_DIR}/src/saturn_v_colored.c
+    ${ASSET_FILES}
 )
 
 # Set up include directories for the main target
@@ -56,6 +58,9 @@ target_include_directories(main PRIVATE
 
 # Define LVGL configuration as a simple include
 target_compile_definitions(main PRIVATE LV_CONF_INCLUDE_SIMPLE)
+
+# Define the ENABLE_MANUAL_CONTROLS option
+option(ENABLE_MANUAL_CONTROLS "Enable manual controls" OFF)
 
 # Add the manual controls flag if enabled
 if(ENABLE_MANUAL_CONTROLS OR DEFINED ENV{ENABLE_MANUAL_CONTROLS})

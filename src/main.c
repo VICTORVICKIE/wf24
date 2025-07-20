@@ -15,7 +15,7 @@ int main(int argc, char **argv)
 
     printf("Starting LVGL watchface application...\n");
     lv_init();
-    lv_display_t *disp = hal_init(466, 466);
+    lv_display_t *disp = hal_init(CLOCK_SIZE, CLOCK_SIZE);
 
     printf("LVGL initialized, display created\n");
     ui_init();
