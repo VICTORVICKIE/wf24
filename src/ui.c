@@ -5,6 +5,7 @@
 #include <time.h>
 
 LV_IMAGE_DECLARE(saturn_v);
+LV_IMAGE_DECLARE(saturn_v_colored);
 
 // Global variables
 static lv_obj_t *scr; // Screen background - now static, managed internally
@@ -14,6 +15,7 @@ lv_color_t palette_dark_gray = LV_COLOR_MAKE(24, 24, 24);
 lv_color_t palette_gold = LV_COLOR_MAKE(255, 215, 0);
 lv_color_t palette_cosmic_latte = LV_COLOR_MAKE(255, 248, 231);
 
+#ifdef ENABLE_MANUAL_CONTROLS
 // Manual time control variables
 static lv_obj_t *time_textarea;
 static lv_obj_t *range_textarea;
@@ -25,10 +27,13 @@ static bool manual_time_mode = false;
 static int manual_hour = 0;
 static int manual_minute = 0;
 static int manual_range = 0;
+#endif
 static lv_group_t *input_group = NULL;
 
 // Clock variables
 static lv_obj_t *scale;
+static lv_obj_t *display_scale;  // New display scale with interval 10
+static lv_obj_t *actual_scale;   // New actual scale with interval 1
 static lv_obj_t *saturn_needle;
 static int32_t hour;
 static int32_t minute;
@@ -45,25 +50,35 @@ const int32_t TOTAL_HOURS = HOUR_END - HOUR_BEGIN + 1;
 const int32_t TOTAL_ANGLE = ANGLE_END - ANGLE_BEGIN + 1;
 const int32_t TOTAL_MINUTES = MINUTE_END - MINUTE_BEGIN + 1;
 const int32_t INTERVAL = 1;
+const int32_t DISPLAY_INTERVAL = 10;  // New display interval
 const int32_t MINUTES_IN_HOUR_PER_INTERVAL = TOTAL_MINUTES / INTERVAL;
+const int32_t MINUTES_IN_HOUR_PER_DISPLAY_INTERVAL = TOTAL_MINUTES / DISPLAY_INTERVAL;  // New display interval calculation
 const int32_t TOTAL_TICKS = TOTAL_HOURS * MINUTES_IN_HOUR_PER_INTERVAL;
+const int32_t TOTAL_DISPLAY_TICKS = TOTAL_HOURS * MINUTES_IN_HOUR_PER_DISPLAY_INTERVAL;  // New display ticks
 const float ANGLE_PER_TICK = (float)TOTAL_ANGLE / (float)TOTAL_TICKS;
+const float ANGLE_PER_DISPLAY_TICK = (float)TOTAL_ANGLE / (float)TOTAL_DISPLAY_TICKS;  // New display angle per tick
 const int32_t TOTAL_TICKS_PLUS_1 = TOTAL_TICKS + 1;
+const int32_t TOTAL_DISPLAY_TICKS_PLUS_1 = TOTAL_DISPLAY_TICKS + 1;  // New display ticks plus 1
 const int32_t SCALE_ROTATION = -90;
 const int32_t TICK_OFFSET = -(int32_t)(SCALE_ROTATION / ANGLE_PER_TICK);
+const int32_t DISPLAY_TICK_OFFSET = -(int32_t)(SCALE_ROTATION / ANGLE_PER_DISPLAY_TICK);  // New display tick offset
 
 // Forward declarations for callback functions
+#ifdef ENABLE_MANUAL_CONTROLS
 static void set_time_btn_cb(lv_event_t *e);
 static void set_range_btn_cb(lv_event_t *e);
 static void reset_time_btn_cb(lv_event_t *e);
 static void textarea_event_cb(lv_event_t *e);
+#endif
 static void timer_cb(lv_timer_t *timer);
 
 // Forward declarations for UI setup functions
 static void setup_gradient_background(void);
 static void make_clock_dial(void);
 static void make_clock_grooves(void);
+#ifdef ENABLE_MANUAL_CONTROLS
 static void create_manual_time_controls(void);
+#endif
 static void print_ui_constants(void);
 
 lv_display_t *hal_init(int32_t w, int32_t h)
@@ -76,9 +91,11 @@ lv_display_t *hal_init(int32_t w, int32_t h)
     // Enable anti-aliasing for smoother rendering
     lv_display_set_antialiasing(disp, true);
 
+#ifdef ENABLE_MANUAL_CONTROLS
     // Set up keyboard input group
     input_group = lv_group_create();
     lv_indev_set_group(kb, input_group);
+#endif
 
     return disp;
 }
@@ -88,6 +105,13 @@ void ui_init(void)
     // Print UI constants for debugging
     print_ui_constants();
 
+    // Debug: Check if ENABLE_MANUAL_CONTROLS is defined
+#ifdef ENABLE_MANUAL_CONTROLS
+    printf("DEBUG: ENABLE_MANUAL_CONTROLS is DEFINED\n");
+#else
+    printf("DEBUG: ENABLE_MANUAL_CONTROLS is NOT DEFINED\n");
+#endif
+
     // Initialize the screen
     scr = lv_scr_act();
 
@@ -95,37 +119,14 @@ void ui_init(void)
     setup_gradient_background();
     make_clock_dial();
     // make_clock_grooves();
+#ifdef ENABLE_MANUAL_CONTROLS
+    printf("DEBUG: About to create manual controls\n");
     create_manual_time_controls();
+    printf("DEBUG: Manual controls created\n");
+#endif
 }
 
-// static void make_clock_grooves(void)
-// {
-//     int inner_radius = clock_arc_size - (clock_arc_width * 2);
-//
-//     int center_radius = 30;
-//
-//     int total_groove_area = inner_radius - center_radius;
-//     int groove_spacing = total_groove_area / 8;
-//
-//     for (int i = 0; i < 8; i++) {
-//         lv_obj_t *groove_arc = lv_arc_create(scr);
-//
-//         int groove_size = inner_radius - (i * groove_spacing);
-//
-//         lv_obj_set_size(groove_arc, groove_size, groove_size);
-//         lv_obj_align(groove_arc, LV_ALIGN_CENTER, 0, 0);
-//         lv_arc_set_bg_angles(groove_arc, arc_start, arc_end);
-//
-//         lv_obj_set_style_arc_width(groove_arc, 1, LV_PART_MAIN);
-//         lv_obj_set_style_arc_rounded(groove_arc, false, LV_PART_MAIN);
-//         lv_obj_set_style_arc_color(groove_arc, palette_dark_gray,
-//         LV_PART_MAIN);
-//
-//         lv_obj_remove_style(groove_arc, NULL, LV_PART_KNOB);
-//         lv_obj_remove_style(groove_arc, NULL, LV_PART_INDICATOR);
-//     }
-// }
-
+#ifdef ENABLE_MANUAL_CONTROLS
 static void create_manual_time_controls(void)
 {
     // Create a container for the controls
@@ -143,7 +144,7 @@ static void create_manual_time_controls(void)
 
     // Create label for manual time display
     manual_time_label = lv_label_create(controls_container);
-    lv_label_set_text(manual_time_label, "Manual: --:--");
+    lv_label_set_text(manual_time_label, "Manual: 00:00");
     lv_obj_align(manual_time_label, LV_ALIGN_TOP_MID, 0, 5);
     lv_obj_set_style_text_color(manual_time_label, palette_cosmic_latte, 0);
     lv_obj_set_style_text_font(manual_time_label, LV_FONT_DEFAULT, 0);
@@ -266,36 +267,37 @@ static void create_manual_time_controls(void)
     lv_obj_center(reset_btn_label);
     lv_obj_set_style_text_color(reset_btn_label, palette_cosmic_latte, 0);
 }
+#endif
 
 static void timer_cb(lv_timer_t *timer)
 {
     LV_UNUSED(timer);
 
-    if (!manual_time_mode) {
-        /* Get current system time */
+#ifdef ENABLE_MANUAL_CONTROLS
+    /* Use manual time only */
+    hour = manual_hour;
+    minute = manual_minute;
+#else
+    /* Get current system time */
     time_t now;
     struct tm *timeinfo;
 
     time(&now);
     timeinfo = localtime(&now);
 
-        hour = timeinfo->tm_hour;
-        minute = timeinfo->tm_min;
-    }
-    else {
-        /* Use manual time */
-        hour = manual_hour;
-        minute = manual_minute;
-    }
+    hour = timeinfo->tm_hour;
+    minute = timeinfo->tm_min;
+#endif
 
     int32_t tick_position =
         (hour * MINUTES_IN_HOUR_PER_INTERVAL) + (minute / INTERVAL);
     printf("Time: %02d:%02d, Pos: %d (should point to hour %d)\n", hour, minute,
            tick_position, hour);
     lv_scale_set_image_needle_value(
-        scale, saturn_needle, (tick_position + TICK_OFFSET) % TOTAL_TICKS);
+        actual_scale, saturn_needle, (tick_position + TICK_OFFSET) % TOTAL_TICKS);
 }
 
+#ifdef ENABLE_MANUAL_CONTROLS
 static void set_time_btn_cb(lv_event_t *e)
 {
     LV_UNUSED(e);
@@ -310,7 +312,6 @@ static void set_time_btn_cb(lv_event_t *e)
             m <= MINUTE_END) {
             manual_hour = h;
             manual_minute = m;
-            manual_time_mode = true;
 
             // Update the clock display
             hour = manual_hour;
@@ -318,7 +319,7 @@ static void set_time_btn_cb(lv_event_t *e)
 
             int32_t tick_position =
                 (hour * MINUTES_IN_HOUR_PER_INTERVAL) + (minute / INTERVAL);
-            lv_scale_set_image_needle_value(scale, saturn_needle,
+            lv_scale_set_image_needle_value(actual_scale, saturn_needle,
                                             (tick_position + TICK_OFFSET) %
                                                 TOTAL_TICKS);
 
@@ -337,7 +338,9 @@ static void set_time_btn_cb(lv_event_t *e)
         printf("Invalid time format. Use HH:MM\n");
     }
 }
+#endif
 
+#ifdef ENABLE_MANUAL_CONTROLS
 static void set_range_btn_cb(lv_event_t *e)
 {
     LV_UNUSED(e);
@@ -349,11 +352,10 @@ static void set_range_btn_cb(lv_event_t *e)
     if (sscanf(range_str, "%d", &range_val) == 1) {
         // Validate range values
         manual_range = range_val;
-        manual_time_mode = false; // Use range mode instead of time mode
 
         // Update the clock display directly with range value
         lv_scale_set_image_needle_value(
-            scale, saturn_needle, (range_val + TICK_OFFSET) % TOTAL_TICKS);
+            actual_scale, saturn_needle, (range_val + TICK_OFFSET) % TOTAL_TICKS);
 
         printf("Manual range set to: %d\n", manual_range);
 
@@ -364,62 +366,103 @@ static void set_range_btn_cb(lv_event_t *e)
         printf("Invalid range format. Use numbers\n");
     }
 }
+#endif
 
+#ifdef ENABLE_MANUAL_CONTROLS
 static void reset_time_btn_cb(lv_event_t *e)
 {
     LV_UNUSED(e);
 
-    manual_time_mode = false;
     lv_textarea_set_text(time_textarea, "");
     lv_textarea_set_text(range_textarea, "");
-    lv_label_set_text(manual_time_label, "Manual: --:--");
+    lv_label_set_text(manual_time_label, "Manual: 00:00");
     lv_label_set_text(manual_range_label, "Range: --");
 
-    // Reset to system time
-    time_t now;
-    struct tm *timeinfo;
-    time(&now);
-    timeinfo = localtime(&now);
-    hour = timeinfo->tm_hour;
-    minute = timeinfo->tm_min;
+    // Reset to 00:00
+    hour = 0;
+    minute = 0;
+    manual_hour = 0;
+    manual_minute = 0;
 
     int32_t tick_position =
         (hour * MINUTES_IN_HOUR_PER_INTERVAL) + (minute / INTERVAL);
     lv_scale_set_image_needle_value(
-        scale, saturn_needle, (tick_position + TICK_OFFSET) % TOTAL_TICKS);
+        actual_scale, saturn_needle, (tick_position + TICK_OFFSET) % TOTAL_TICKS);
 
-    printf("Reset to system time: %02d:%02d\n", hour, minute);
+    printf("Reset to 00:00\n");
 }
+#endif
 
+#ifdef ENABLE_MANUAL_CONTROLS
 static void textarea_event_cb(lv_event_t *e)
 {
     // Empty callback - removed auto-formatting and validation
     LV_UNUSED(e);
 }
+#endif
 
 static void make_clock_dial(void)
 {
-    scale = lv_scale_create(lv_screen_active());
+    // Create the actual scale (interval 1) - this will be the functional scale
+    actual_scale = lv_scale_create(lv_screen_active());
+    lv_obj_set_size(actual_scale, 460, 460);
+    lv_scale_set_mode(actual_scale, LV_SCALE_MODE_ROUND_INNER);
+    lv_obj_set_style_bg_opa(actual_scale, LV_OPA_0, 0);
+    lv_obj_set_style_radius(actual_scale, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_clip_corner(actual_scale, true, 0);
+    lv_obj_center(actual_scale);
 
-    lv_obj_set_size(scale, 460, 460);
-    lv_scale_set_mode(scale, LV_SCALE_MODE_ROUND_INNER);
-    lv_obj_set_style_bg_opa(scale, LV_OPA_0, 0);
-    lv_obj_set_style_radius(scale, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_clip_corner(scale, true, 0);
-    lv_obj_center(scale);
+    // Hide labels for actual scale since we only want the display scale to show them
+    lv_scale_set_label_show(actual_scale, false);
 
-    lv_scale_set_label_show(scale, true);
+    lv_scale_set_total_tick_count(actual_scale, TOTAL_TICKS_PLUS_1);
+    lv_scale_set_major_tick_every(actual_scale, MINUTES_IN_HOUR_PER_INTERVAL);
 
-    lv_scale_set_total_tick_count(scale,
-                                  TOTAL_TICKS_PLUS_1); // 145 ticks for 24 hours
-    lv_scale_set_major_tick_every(scale, MINUTES_IN_HOUR_PER_INTERVAL);
+    // Style the actual scale (invisible ticks for functionality)
+    static lv_style_t actual_indicator_style;
+    lv_style_init(&actual_indicator_style);
+    lv_style_set_line_color(&actual_indicator_style, lv_color_black());
+    lv_style_set_length(&actual_indicator_style, 0);    /* invisible ticks */
+    lv_style_set_line_width(&actual_indicator_style, 0); /* invisible ticks */
+    lv_obj_add_style(actual_scale, &actual_indicator_style, LV_PART_INDICATOR);
+
+    static lv_style_t actual_minor_ticks_style;
+    lv_style_init(&actual_minor_ticks_style);
+    lv_style_set_line_color(&actual_minor_ticks_style, lv_color_black());
+    lv_style_set_length(&actual_minor_ticks_style, 0);     /* invisible ticks */
+    lv_style_set_line_width(&actual_minor_ticks_style, 0); /* invisible ticks */
+    lv_obj_add_style(actual_scale, &actual_minor_ticks_style, LV_PART_ITEMS);
+
+    static lv_style_t actual_main_line_style;
+    lv_style_init(&actual_main_line_style);
+    lv_style_set_arc_color(&actual_main_line_style, lv_color_black());
+    lv_style_set_arc_width(&actual_main_line_style, 0); /* invisible main line */
+    lv_obj_add_style(actual_scale, &actual_main_line_style, LV_PART_MAIN);
+
+    lv_scale_set_range(actual_scale, 0, TOTAL_TICKS);
+    lv_scale_set_angle_range(actual_scale, TOTAL_ANGLE);
+    lv_scale_set_rotation(actual_scale, SCALE_ROTATION);
+
+    // Create the display scale (interval 10) - this will be the visible scale
+    display_scale = lv_scale_create(lv_screen_active());
+    lv_obj_set_size(display_scale, 460, 460);
+    lv_scale_set_mode(display_scale, LV_SCALE_MODE_ROUND_INNER);
+    lv_obj_set_style_bg_opa(display_scale, LV_OPA_0, 0);
+    lv_obj_set_style_radius(display_scale, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_clip_corner(display_scale, true, 0);
+    lv_obj_center(display_scale);
+
+    lv_scale_set_label_show(display_scale, true);
+
+    lv_scale_set_total_tick_count(display_scale, TOTAL_DISPLAY_TICKS_PLUS_1);
+    lv_scale_set_major_tick_every(display_scale, MINUTES_IN_HOUR_PER_DISPLAY_INTERVAL);
 
     static const char *hour_ticks[] = {"0",  "1",  "2",  "3",  "4",  "5",  "6",
                                        "7",  "8",  "9",  "10", "11", "12", "13",
                                        "14", "15", "16", "17", "18", "19", "20",
                                        "21", "22", "23", NULL};
 
-    lv_scale_set_text_src(scale, hour_ticks);
+    lv_scale_set_text_src(display_scale, hour_ticks);
 
     static lv_style_t indicator_style;
     lv_style_init(&indicator_style);
@@ -432,7 +475,7 @@ static void make_clock_dial(void)
     lv_style_set_line_color(&indicator_style, palette_cosmic_latte);
     lv_style_set_length(&indicator_style, 10);    /* tick length */
     lv_style_set_line_width(&indicator_style, 2); /* tick width */
-    lv_obj_add_style(scale, &indicator_style, LV_PART_INDICATOR);
+    lv_obj_add_style(display_scale, &indicator_style, LV_PART_INDICATOR);
 
     /* Minor tick properties */
     static lv_style_t minor_ticks_style;
@@ -440,23 +483,22 @@ static void make_clock_dial(void)
     lv_style_set_line_color(&minor_ticks_style, palette_cosmic_latte);
     lv_style_set_length(&minor_ticks_style, 5);     /* tick length */
     lv_style_set_line_width(&minor_ticks_style, 1); /* tick width */
-    lv_obj_add_style(scale, &minor_ticks_style, LV_PART_ITEMS);
+    lv_obj_add_style(display_scale, &minor_ticks_style, LV_PART_ITEMS);
 
     /* Main line properties */
     static lv_style_t main_line_style;
     lv_style_init(&main_line_style);
     lv_style_set_arc_color(&main_line_style, lv_color_black());
     lv_style_set_arc_width(&main_line_style, 5);
-    lv_obj_add_style(scale, &main_line_style, LV_PART_MAIN);
+    lv_obj_add_style(display_scale, &main_line_style, LV_PART_MAIN);
 
-    lv_scale_set_range(scale, 0, TOTAL_TICKS);
+    lv_scale_set_range(display_scale, 0, TOTAL_DISPLAY_TICKS);
+    lv_scale_set_angle_range(display_scale, TOTAL_ANGLE);
+    lv_scale_set_rotation(display_scale, SCALE_ROTATION);
 
-    lv_scale_set_angle_range(scale, TOTAL_ANGLE);
-    lv_scale_set_rotation(scale, SCALE_ROTATION);
-
-    /* Create Saturn needle image */
-    saturn_needle = lv_image_create(scale);
-    lv_image_set_src(saturn_needle, &saturn_v);
+    /* Create Saturn needle image on the actual scale */
+    saturn_needle = lv_image_create(actual_scale);
+    lv_image_set_src(saturn_needle, &saturn_v_colored);
     int32_t saturn_needle_h = lv_image_get_src_height(saturn_needle);
     int32_t saturn_needle_w = lv_image_get_src_width(saturn_needle);
 
@@ -477,7 +519,7 @@ static void make_clock_dial(void)
     lv_image_set_pivot(saturn_needle, pivot_x, pivot_y);
 
     /* Create center axis/cap */
-    lv_obj_t *center_cap = lv_obj_create(scale);
+    lv_obj_t *center_cap = lv_obj_create(actual_scale);
     lv_obj_set_size(center_cap, 20, 20);
     lv_obj_align(center_cap, LV_ALIGN_CENTER, 0, 0);
 
@@ -493,6 +535,14 @@ static void make_clock_dial(void)
     lv_obj_set_style_pad_all(center_cap, 0, 0);
     lv_obj_set_style_margin_all(center_cap, 0, 0);
 
+#ifdef ENABLE_MANUAL_CONTROLS
+    /* Initialize with 00:00 for manual mode */
+    hour = 0;
+    minute = 0;
+    manual_hour = 0;
+    manual_minute = 0;
+    manual_time_mode = true;
+#else
     /* Initialize with current system time */
     time_t now;
     struct tm *timeinfo;
@@ -500,6 +550,7 @@ static void make_clock_dial(void)
     timeinfo = localtime(&now);
     hour = timeinfo->tm_hour;
     minute = timeinfo->tm_min;
+#endif
 
     lv_timer_t *timer =
         lv_timer_create(timer_cb, 10 * 1000, NULL); // 10 seconds
@@ -542,11 +593,17 @@ static void print_ui_constants(void)
     printf("TOTAL_ANGLE: %d\n", TOTAL_ANGLE);
     printf("TOTAL_MINUTES: %d\n", TOTAL_MINUTES);
     printf("INTERVAL: %d\n", INTERVAL);
+    printf("DISPLAY_INTERVAL: %d\n", DISPLAY_INTERVAL);
     printf("TOTAL_TICKS: %d\n", TOTAL_TICKS);
+    printf("TOTAL_DISPLAY_TICKS: %d\n", TOTAL_DISPLAY_TICKS);
     printf("MINUTES_IN_HOUR_PER_INTERVAL: %d\n", MINUTES_IN_HOUR_PER_INTERVAL);
+    printf("MINUTES_IN_HOUR_PER_DISPLAY_INTERVAL: %d\n", MINUTES_IN_HOUR_PER_DISPLAY_INTERVAL);
     printf("ANGLE_PER_TICK: %.2f\n", ANGLE_PER_TICK);
+    printf("ANGLE_PER_DISPLAY_TICK: %.2f\n", ANGLE_PER_DISPLAY_TICK);
     printf("TOTAL_TICKS_PLUS_1: %d\n", TOTAL_TICKS_PLUS_1);
+    printf("TOTAL_DISPLAY_TICKS_PLUS_1: %d\n", TOTAL_DISPLAY_TICKS_PLUS_1);
     printf("SCALE_ROTATION: %d\n", SCALE_ROTATION);
     printf("TICK_OFFSET: %d\n", TICK_OFFSET);
+    printf("DISPLAY_TICK_OFFSET: %d\n", DISPLAY_TICK_OFFSET);
     printf("==================\n\n");
 }

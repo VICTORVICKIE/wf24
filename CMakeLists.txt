@@ -44,6 +44,7 @@ add_executable(main
     ${PROJECT_SOURCE_DIR}/src/main.c
     ${PROJECT_SOURCE_DIR}/src/ui.c
     ${PROJECT_SOURCE_DIR}/src/saturn_v.c
+    ${PROJECT_SOURCE_DIR}/src/saturn_v_colored.c
 )
 
 # Set up include directories for the main target
@@ -55,6 +56,14 @@ target_include_directories(main PRIVATE
 
 # Define LVGL configuration as a simple include
 target_compile_definitions(main PRIVATE LV_CONF_INCLUDE_SIMPLE)
+
+# Add the manual controls flag if enabled
+if(ENABLE_MANUAL_CONTROLS OR DEFINED ENV{ENABLE_MANUAL_CONTROLS})
+    target_compile_definitions(main PRIVATE ENABLE_MANUAL_CONTROLS=1)
+    message(STATUS "Manual controls enabled - ENABLE_MANUAL_CONTROLS=1")
+else()
+    message(STATUS "Manual controls disabled")
+endif()
 
 # Link libraries
 target_link_libraries(main lvgl lvgl::examples lvgl::demos lvgl::thorvg SDL2main SDL2)
